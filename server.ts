@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import express from 'express';
 import http from 'node:http';
 import path from 'node:path';
@@ -342,6 +343,20 @@ async function startServer() {
   app.get('/api/health', (_req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.json({ ok: true, rooms: rooms.size, queued: quickMatchQueue.length });
+  });
+
+  app.get('/tirahan-itch-io.zip', (_req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      res.status(404).send('Not found');
+      return;
+    }
+    const exportZipPath = path.resolve(process.cwd(), 'exports', 'tirahan-itch-io.zip');
+    if (!fs.existsSync(exportZipPath)) {
+      res.status(404).send('itch.io package not built yet');
+      return;
+    }
+    res.setHeader('Content-Type', 'application/zip');
+    res.sendFile(exportZipPath);
   });
 
   if (process.env.NODE_ENV !== 'production') {

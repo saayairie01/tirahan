@@ -5,6 +5,13 @@ import { RulesModal } from './components/RulesModal';
 import { TopBar } from './components/TopBar';
 
 const IS_ITCH_EXPORT = import.meta.env.VITE_ITCH_EXPORT === 'true';
+const IS_AUTHORING_ENV =
+  !IS_ITCH_EXPORT &&
+  (import.meta.env.DEV ||
+    (typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname.startsWith('ais-dev-'))));
 import {
   KEY_ROTATION_SPEED,
   LOGICAL_HEIGHT,
@@ -1185,7 +1192,7 @@ export default function App() {
   };
 
   const handleDownloadItchZip = async () => {
-    if (IS_ITCH_EXPORT || isExportingZip) return;
+    if (!IS_AUTHORING_ENV || isExportingZip) return;
     setIsExportingZip(true);
     setExportStatus(null);
     try {
@@ -1726,7 +1733,7 @@ export default function App() {
                 )}
               </div>
 
-              {!IS_ITCH_EXPORT && (
+              {IS_AUTHORING_ENV && (
                 <div className="mt-5 space-y-2.5 border-t border-zinc-800/90 pt-4">
                   <div className="flex items-center justify-between gap-2 text-xs text-zinc-400">
                     <span>

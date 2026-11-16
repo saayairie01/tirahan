@@ -5,8 +5,7 @@ import JSZip from 'jszip';
 
 const root = process.cwd();
 const outDir = path.join(root, 'dist-itch');
-const publicZipPath = path.join(root, 'public', 'tirahan-itch-io.zip');
-const rootZipPath = path.join(root, 'tirahan-itch-io.zip');
+const exportZipPath = path.join(root, 'exports', 'tirahan-itch-io.zip');
 
 if (fs.existsSync(outDir)) {
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -61,9 +60,8 @@ const zipBuffer = await zip.generateAsync({
   compressionOptions: { level: 9 },
 });
 
-fs.mkdirSync(path.dirname(publicZipPath), { recursive: true });
-fs.writeFileSync(publicZipPath, zipBuffer);
-fs.writeFileSync(rootZipPath, zipBuffer);
+fs.mkdirSync(path.dirname(exportZipPath), { recursive: true });
+fs.writeFileSync(exportZipPath, zipBuffer);
 fs.rmSync(outDir, { recursive: true, force: true });
 
-console.log(`Generated itch.io HTML5 package: ${publicZipPath} (${zipBuffer.length} bytes)`);
+console.log(`Generated itch.io HTML5 package: ${exportZipPath} (${zipBuffer.length} bytes)`);

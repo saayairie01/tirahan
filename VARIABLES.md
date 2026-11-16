@@ -158,6 +158,7 @@ Complete reference of all constants, data model fields, UI state variables, audi
 | `musicFileName` | `string` | `'mattoglseby-3.ogg'` | Active background music filename |
 | `exportStatus`, `isExportingZip` | `string \| null`, `boolean` | `null`, `false` | Authoring-only itch.io `.zip` packaging feedback |
 | `IS_ITCH_EXPORT` | `boolean` | `import.meta.env.VITE_ITCH_EXPORT === 'true'` | Strips Godot 4 script UI and authoring export tools from itch.io builds (Online mode stays active) |
+| `IS_AUTHORING_ENV` | `boolean` | `!IS_ITCH_EXPORT && (DEV \|\| localhost/ais-dev)` | Restricts itch.io HTML5 `.zip` packager and `.ogg` bundler UI to local/AI Studio authoring environments (hidden on public Render deploys) |
 | `transportMode` | `OnlineTransportMode` | `getDefaultTransportMode()` (`'p2p'` in itch export, `'ws'` on web) | Active multiplayer transport (`Direct P2P` vs `Match Server`) |
 | `serverSettingsOpen`, `wsUrlInput`, `wsUrlSavedNotice` | `boolean / string / string \| null` | `false / resolveWebSocketUrl() / null` | Controls inline WebSocket Server URL editor and save/reset feedback |
 | `onlinePhase` | `OnlinePhase` | `'idle'` | Lobby/match connection state (`idle`, `waiting_room`, `queueing`, `playing`) |
