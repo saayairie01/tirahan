@@ -50,6 +50,7 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const rooms = new Map<string, OnlineRoom>();
 const socketMeta = new WeakMap<WebSocket, SocketMeta>();
+const lastSeenAt = new WeakMap<WebSocket, number>();
 const quickMatchQueue: { ws: WebSocket; rules: MatchRules }[] = [];
 
 function sanitizeRules(raw: unknown): MatchRules {
@@ -389,13 +390,17 @@ async function startServer() {
 
   wss.on('connection', (ws) => {
     aliveSockets.add(ws);
+    lastSeenAt.set(ws, Date.now());
     socketMeta.set(ws, { roomCode: null, seat: null });
 
     ws.on('pong', () => {
       aliveSockets.add(ws);
+      lastSeenAt.set(ws, Date.now());
     });
 
     ws.on('message', (raw) => {
+      aliveSockets.add(ws);
+      lastSeenAt.set(ws, Date.now());
       let msg: ClientToServerMessage;
       try {
         msg = JSON.parse(raw.toString()) as ClientToServerMessage;
@@ -506,6 +511,15 @@ async function startServer() {
         }
 
         clearSeatTimers(targetSeat);
+        if (targetSeat.ws && targetSeat.ws !== ws) {
+          const previousWs = targetSeat.ws;
+          socketMeta.set(previousWs, { roomCode: null, seat: null });
+          try {
+            previousWs.close(4001, 'Session resumed in another tab');
+          } catch {
+            // Ignore close errors
+          }
+        }
         targetSeat.ws = ws;
         socketMeta.set(ws, { roomCode: code, seat: targetSeat.seat });
 
@@ -535,10 +549,13 @@ async function startServer() {
         handleLeaveOrClose(ws, true);
         const rules = sanitizeRules(msg.rules);
 
-        // Prune closed sockets from queue before pairing
+        // Prune closed or stale sockets from queue before pairing
+        const now = Date.now();
         while (
           quickMatchQueue.length > 0 &&
-          quickMatchQueue[0].ws.readyState !== WebSocket.OPEN
+          (quickMatchQueue[0].ws === ws ||
+            quickMatchQueue[0].ws.readyState !== WebSocket.OPEN ||
+            now - (lastSeenAt.get(quickMatchQueue[0].ws) ?? 0) > 65000)
         ) {
           quickMatchQueue.shift();
         }

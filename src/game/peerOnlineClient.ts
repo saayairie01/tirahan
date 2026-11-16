@@ -221,9 +221,17 @@ export class PeerOnlineClient implements OnlineTransport {
     }
 
     return new Promise<Peer>((resolve, reject) => {
-      const peer = peerId
-        ? new Peer(peerId, { debug: 0 })
-        : new Peer({ debug: 0 });
+      const peerConfig = {
+        debug: 0,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+          ],
+        },
+      };
+      const peer = peerId ? new Peer(peerId, peerConfig) : new Peer(peerConfig);
       let settled = false;
 
       const timeout = window.setTimeout(() => {

@@ -167,6 +167,7 @@ Complete reference of all constants, data model fields, UI state variables, audi
 | `onlineError`, `joinCodeInput`, `copiedInvite` | `string \| null / string / boolean` | `null / '' / false` | Online room error feedback, join code input, and invite copy confirmation |
 | `opponentDisconnectedSeconds` | `number \| null` | `null` | Live 60s reconnect grace countdown when opponent drops mid-match |
 | `rematchRequested`, `opponentWantsRematch` | `boolean` | `false` | Mutual rematch vote flags in Online Game Over overlay |
+| `turnHint` | `string \| null` | `null` | Temporary inline feedback if an online player clicks out of turn or clicks an opponent ship |
 | `rulesOpen`, `godotOpen` | `boolean` | `false` | Controls visibility of `RulesModal` and `GodotModal` |
 | `hud` | `HudSnapshot` | `readHudSnapshot(...)` | Includes `currentTurn, turnCount, p1/p2MotherHp, p1/p2MotherMaxHp, p1/p2Fighters, p1/p2ShieldPct, winner, victoryReady, pendingCollapseCount, lastEventText` |
 | `activeShipStatus` | `object` | `{ active: false, charging: false, powerPct: 10, rangePx: 39, overheatPct: 0 }` | Footer live charge readout |
@@ -196,6 +197,7 @@ Complete reference of all constants, data model fields, UI state variables, audi
 | `rooms` | `server.ts` | `Map<string, OnlineRoom>` | Active private lobbies and ongoing authoritative online matches |
 | `quickMatchQueue` | `server.ts` | `{ ws: WebSocket; rules: MatchRules }[]` | FIFO quick-match pairing queue |
 | `socketMeta` | `server.ts` | `WeakMap<WebSocket, SocketMeta>` | Maps each socket to its active `{ roomCode, seat }` |
+| `lastSeenAt` | `server.ts` | `WeakMap<WebSocket, number>` | Last message/pong timestamp used to prune stale queue sockets before pairing |
 | `SESSION_KEY`, `WS_URL_OVERRIDE_KEY` | `src/game/onlineClient.ts` | `'tirahan_online_session'`, `'tirahan_ws_url_override'` | `sessionStorage` match recovery (WS & P2P) and `localStorage` custom WebSocket URL override |
 | `RuntimeOnlineConfig` | `src/game/onlineTypes.ts` | `{ defaultTransport?, defaultWsUrl? }` | Schema for `online-config.json` auto-embedded inside downloaded itch.io `.zip` bundles |
 | `OnlineTransportMode` | `src/game/onlineTypes.ts` | `'ws' \| 'p2p'` | Selects Match Server (WebSocket) vs Direct P2P (WebRTC) transport |

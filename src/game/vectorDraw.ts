@@ -351,19 +351,19 @@ function drawTurnReticles(
   timeSec: number,
   isHumanTurn: boolean
 ) {
-  if (!isHumanTurn || world.actionLocked || world.winner !== null) return;
+  if (world.actionLocked || world.winner !== null) return;
 
   for (const ship of world.ships) {
     if (!ship.alive || ship.owner !== world.currentTurn) continue;
-    if (actionMode === 'move' && ship.kind !== 'fighter') continue;
+    if (isHumanTurn && actionMode === 'move' && ship.kind !== 'fighter') continue;
 
-    const isActive = ship.id === activeShipId;
-    const isHovered = ship.id === hoveredShipId;
+    const isActive = isHumanTurn && ship.id === activeShipId;
+    const isHovered = isHumanTurn && ship.id === hoveredShipId;
     const color = getPlayerColor(ship.owner);
 
     ctx.save();
     ctx.translate(ship.x, ship.y);
-    ctx.rotate(isActive ? timeSec * 1.15 : timeSec * 0.55);
+    ctx.rotate(isActive ? timeSec * 1.15 : isHumanTurn ? timeSec * 0.55 : timeSec * 0.35);
 
     if (isActive) {
       ctx.strokeStyle = '#FFFFFF';
@@ -373,13 +373,21 @@ function drawTurnReticles(
       ctx.beginPath();
       ctx.arc(0, 0, ship.radius + 11, 0, Math.PI * 2);
       ctx.stroke();
-    } else {
+    } else if (isHumanTurn) {
       ctx.strokeStyle = isHovered ? '#FFFFFF' : color;
-      ctx.globalAlpha = isHovered ? 0.8 : 0.28;
+      ctx.globalAlpha = isHovered ? 0.8 : 0.32;
       ctx.lineWidth = isHovered ? 1.4 : 1;
       ctx.setLineDash([4, 6]);
       ctx.beginPath();
       ctx.arc(0, 0, ship.radius + (isHovered ? 10 : 8), 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.14;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 7]);
+      ctx.beginPath();
+      ctx.arc(0, 0, ship.radius + 8, 0, Math.PI * 2);
       ctx.stroke();
     }
 

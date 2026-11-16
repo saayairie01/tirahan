@@ -165,6 +165,7 @@ export default function App() {
   );
   const [rematchRequested, setRematchRequested] = useState(false);
   const [opponentWantsRematch, setOpponentWantsRematch] = useState(false);
+  const [turnHint, setTurnHint] = useState<string | null>(null);
 
   const worldRef = useRef<GameWorld>(
     createWorld({ ricochetWalls: false, asteroidDensity: 'medium' })
@@ -199,6 +200,7 @@ export default function App() {
   const lastAimSentAtRef = useRef<number>(0);
   const reconnectRetryTimerRef = useRef<number | null>(null);
   const p2pGuestCountdownRef = useRef<number | null>(null);
+  const turnHintTimerRef = useRef<number | null>(null);
 
   const gameStateRef = useRef(gameState);
   gameStateRef.current = gameState;
@@ -324,6 +326,17 @@ export default function App() {
     syncActiveStatus();
   }, [syncActiveStatus]);
 
+  const showTurnHint = useCallback((message: string) => {
+    setTurnHint(message);
+    if (turnHintTimerRef.current !== null) {
+      window.clearTimeout(turnHintTimerRef.current);
+    }
+    turnHintTimerRef.current = window.setTimeout(() => {
+      setTurnHint(null);
+      turnHintTimerRef.current = null;
+    }, 2200);
+  }, []);
+
   const clearOnlineTimers = useCallback(() => {
     if (reconnectRetryTimerRef.current !== null) {
       window.clearTimeout(reconnectRetryTimerRef.current);
@@ -333,16 +346,26 @@ export default function App() {
       window.clearInterval(p2pGuestCountdownRef.current);
       p2pGuestCountdownRef.current = null;
     }
+    if (turnHintTimerRef.current !== null) {
+      window.clearTimeout(turnHintTimerRef.current);
+      turnHintTimerRef.current = null;
+    }
   }, []);
 
   const leaveOnlineRoom = useCallback(() => {
     clearOnlineTimers();
     onlineClientRef.current?.send({ type: 'room:leave' });
     clearOnlineSession();
+    onlinePhaseRef.current = 'idle';
+    onlineSeatRef.current = null;
+    opponentDisconnectedRef.current = null;
+    gameModeRef.current = 'pvp';
+    gameStateRef.current = 'TITLE_MENU';
     setOnlinePhase('idle');
     setOnlineRoomCode(null);
     setOnlineSeat(null);
     setOnlineError(null);
+    setTurnHint(null);
     setOpponentDisconnectedSeconds(null);
     setRematchRequested(false);
     setOpponentWantsRematch(false);
@@ -364,6 +387,8 @@ export default function App() {
 
       const handleServerMessage = (msg: ServerToClientMessage) => {
         if (msg.type === 'room:created') {
+          onlineSeatRef.current = msg.seat;
+          onlinePhaseRef.current = 'waiting_room';
           setOnlineRoomCode(msg.code);
           setOnlineSeat(msg.seat);
           setOnlinePhase('waiting_room');
@@ -373,12 +398,14 @@ export default function App() {
         }
 
         if (msg.type === 'queue:waiting') {
+          onlinePhaseRef.current = 'queueing';
           setOnlinePhase('queueing');
           setOnlineError(null);
           return;
         }
 
         if (msg.type === 'queue:cancelled') {
+          onlinePhaseRef.current = 'idle';
           setOnlinePhase('idle');
           return;
         }
@@ -395,21 +422,28 @@ export default function App() {
           }
           clearCpuTimers();
           resetLocalInputState();
+          const snap = readHudSnapshot(msg.world);
+          const nextState: GameState = snap.victoryReady ? 'GAME_OVER' : 'PLAYING';
+          const oppDisconnected =
+            msg.type === 'room:resynced' ? msg.opponentDisconnectedSeconds : null;
+          gameModeRef.current = 'online';
+          onlinePhaseRef.current = 'playing';
+          onlineSeatRef.current = msg.seat;
+          opponentDisconnectedRef.current = oppDisconnected;
+          gameStateRef.current = nextState;
+          worldRef.current = msg.world;
           setGameMode('online');
           setOnlinePhase('playing');
           setOnlineRoomCode(msg.code);
           setOnlineSeat(msg.seat);
           setOnlineError(null);
+          setTurnHint(null);
           setActionMode('fire');
           setRematchRequested(false);
           setOpponentWantsRematch(false);
-          setOpponentDisconnectedSeconds(
-            msg.type === 'room:resynced' ? msg.opponentDisconnectedSeconds : null
-          );
-          worldRef.current = msg.world;
-          const snap = readHudSnapshot(msg.world);
+          setOpponentDisconnectedSeconds(oppDisconnected);
           setHud(snap);
-          setGameState(snap.victoryReady ? 'GAME_OVER' : 'PLAYING');
+          setGameState(nextState);
           sound.tryStartMusicOnGesture();
           return;
         }
@@ -428,19 +462,25 @@ export default function App() {
         }
 
         if (msg.type === 'world:state') {
+          const prevTurn = worldRef.current.currentTurn;
           worldRef.current = msg.world;
+          if (msg.world.currentTurn !== prevTurn) {
+            setTurnHint(null);
+          }
           playOnlineSfxCues(msg.sfx);
           syncHud();
           return;
         }
 
         if (msg.type === 'opponent:disconnected') {
+          opponentDisconnectedRef.current = msg.remainingSeconds;
           setOpponentDisconnectedSeconds(msg.remainingSeconds);
           return;
         }
 
         if (msg.type === 'opponent:reconnected') {
           clearOnlineTimers();
+          opponentDisconnectedRef.current = null;
           setOpponentDisconnectedSeconds(null);
           return;
         }
@@ -448,6 +488,7 @@ export default function App() {
         if (msg.type === 'match:forfeit') {
           clearOnlineTimers();
           worldRef.current = msg.world;
+          opponentDisconnectedRef.current = null;
           setOpponentDisconnectedSeconds(null);
           clearOnlineSession();
           if (msg.winner === onlineSeatRef.current) {
@@ -463,10 +504,12 @@ export default function App() {
         }
 
         if (msg.type === 'room:error') {
+          worldRef.current.actionLocked = false;
           setOnlineError(msg.message);
           setRematchRequested(false);
           if (onlinePhaseRef.current !== 'playing') {
             clearOnlineSession();
+            onlinePhaseRef.current = 'idle';
             setOnlinePhase('idle');
           }
         }
@@ -686,8 +729,13 @@ export default function App() {
     chargePointerIdRef.current = null;
     spaceChargingRef.current = false;
     if (gameModeRef.current === 'online') {
+      if (!onlineClientRef.current?.isConnected()) {
+        setOnlineError('Connection lost — waiting to reconnect...');
+        syncActiveStatus();
+        return;
+      }
       world.actionLocked = true;
-      onlineClientRef.current?.send({
+      onlineClientRef.current.send({
         type: 'action:fire',
         shipId: ship.id,
         angle: ship.angle,
@@ -1052,7 +1100,23 @@ export default function App() {
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isInputAllowed()) return;
+    if (!isInputAllowed()) {
+      if (
+        e.button === 0 &&
+        gameStateRef.current === 'PLAYING' &&
+        gameModeRef.current === 'online' &&
+        !modalsOpenRef.current &&
+        worldRef.current.winner === null &&
+        !worldRef.current.actionLocked &&
+        opponentDisconnectedRef.current === null &&
+        onlineSeatRef.current !== null &&
+        worldRef.current.currentTurn !== onlineSeatRef.current
+      ) {
+        const oppLabel = worldRef.current.currentTurn === 1 ? 'Player 1 (Cyan)' : 'Player 2 (Amber)';
+        showTurnHint(`Waiting for ${oppLabel} to move`);
+      }
+      return;
+    }
 
     // Right-click deselects active ship
     if (e.button === 2) {
@@ -1071,6 +1135,16 @@ export default function App() {
     const world = worldRef.current;
     const clickedShip = findShipAtPoint(world, pt.x, pt.y, world.currentTurn);
 
+    if (!clickedShip && gameModeRef.current === 'online' && !activeFireRef.current) {
+      const otherTurn: PlayerId = world.currentTurn === 1 ? 2 : 1;
+      const enemyShip = findShipAtPoint(world, pt.x, pt.y, otherTurn);
+      if (enemyShip) {
+        const myColor = world.currentTurn === 1 ? 'Cyan' : 'Amber';
+        showTurnHint(`That's your opponent's ship — select one of your ${myColor} ships`);
+        return;
+      }
+    }
+
     // Move mode: drag a friendly fighter ship to reposition
     if (actionModeRef.current === 'move') {
       if (!clickedShip || clickedShip.kind !== 'fighter') return;
@@ -1082,6 +1156,7 @@ export default function App() {
 
     // Fire mode: clicking an inactive friendly ship activates or switches to it
     if (clickedShip && (!activeFireRef.current || activeFireRef.current.shipId !== clickedShip.id)) {
+      setTurnHint(null);
       activeFireRef.current = {
         shipId: clickedShip.id,
         isCharging: false,
@@ -1141,8 +1216,12 @@ export default function App() {
       moveDraftRef.current = null;
       if (draft && !draft.cancelled && isInputAllowed()) {
         if (gameModeRef.current === 'online') {
+          if (!onlineClientRef.current?.isConnected()) {
+            setOnlineError('Connection lost — waiting to reconnect...');
+            return;
+          }
           worldRef.current.actionLocked = true;
-          onlineClientRef.current?.send({
+          onlineClientRef.current.send({
             type: 'action:move',
             shipId: draft.shipId,
             targetX: draft.targetX,
@@ -1437,11 +1516,46 @@ export default function App() {
 
       {/* Main Black Vector Battlefield */}
       <main className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-black p-2 sm:p-4">
-        {gameMode === 'online' && gameState === 'PLAYING' && opponentDisconnectedSeconds !== null && (
+        {gameMode === 'online' && gameState === 'PLAYING' && onlineError && (
+          <div className="absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-red-500/40 bg-zinc-950/95 px-4 py-2 text-xs font-mono text-red-300 shadow-lg">
+            <span>{onlineError}</span>
+            <button
+              type="button"
+              onClick={leaveOnlineRoom}
+              className="rounded border border-zinc-700 bg-zinc-900 px-2.5 py-0.5 text-[11px] text-zinc-100 hover:bg-zinc-800 cursor-pointer whitespace-nowrap"
+            >
+              Back to Lobby
+            </button>
+          </div>
+        )}
+        {gameMode === 'online' && gameState === 'PLAYING' && !onlineError && opponentDisconnectedSeconds !== null && (
           <div className="pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-amber-500/40 bg-zinc-950/95 px-4 py-2 text-xs font-mono tabular-nums text-amber-300 shadow-lg">
             Opponent disconnected · Waiting {opponentDisconnectedSeconds}s before forfeit
           </div>
         )}
+        {gameMode === 'online' &&
+          gameState === 'PLAYING' &&
+          !onlineError &&
+          opponentDisconnectedSeconds === null &&
+          onlineSeat !== null && (
+            <div
+              className={`pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-lg border px-3.5 py-1.5 text-xs font-mono shadow-lg whitespace-nowrap ${
+                turnHint
+                  ? 'border-amber-500/50 bg-zinc-950/95 text-amber-200'
+                  : hud.currentTurn === onlineSeat
+                    ? onlineSeat === 1
+                      ? 'border-sky-500/40 bg-zinc-950/90 text-sky-300'
+                      : 'border-orange-500/40 bg-zinc-950/90 text-orange-300'
+                    : 'border-zinc-800 bg-zinc-950/85 text-zinc-400'
+              }`}
+            >
+              {turnHint
+                ? turnHint
+                : hud.currentTurn === onlineSeat
+                  ? `Your Turn · P${onlineSeat} (${onlineSeat === 1 ? 'Cyan' : 'Amber'}) — Click a ${onlineSeat === 1 ? 'Cyan' : 'Amber'} ship`
+                  : `You are P${onlineSeat} (${onlineSeat === 1 ? 'Cyan' : 'Amber'}) · Waiting for Player ${hud.currentTurn}`}
+            </div>
+          )}
         <div
           ref={containerRef}
           className="relative flex h-full w-full items-center justify-center"
