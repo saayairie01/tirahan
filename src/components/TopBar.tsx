@@ -1,5 +1,5 @@
 import { Code2, HelpCircle, Music, RotateCcw, Volume2, VolumeX } from 'lucide-react';
-import { ActionMode, GameMode, GameState, PlayerId } from '../game/types';
+import { APP_VERSION, ActionMode, GameMode, GameState, PlayerId } from '../game/types';
 
 const IS_ITCH_EXPORT = import.meta.env.VITE_ITCH_EXPORT === 'true';
 
@@ -56,13 +56,16 @@ export function TopBar({
 }: TopBarProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-zinc-800/90 bg-black px-4 sm:px-6">
-      {/* Zone 1: Brand + optional active room code */}
-      <div className="flex items-center gap-3 whitespace-nowrap shrink-0">
+      {/* Zone 1: Brand + version + optional active room code */}
+      <div className="flex items-baseline gap-2.5 whitespace-nowrap shrink-0">
         <span className="text-lg font-semibold tracking-tight text-zinc-100">
           Tirahan
         </span>
+        <span className="text-xs font-mono text-zinc-500">
+          {APP_VERSION}
+        </span>
         {gameMode === 'online' && onlineRoomCode && gameState !== 'TITLE_MENU' && (
-          <span className="hidden sm:inline text-xs font-mono text-zinc-400">
+          <span className="hidden sm:inline text-xs font-mono text-zinc-400 pl-1">
             Room {onlineRoomCode}
           </span>
         )}
@@ -89,7 +92,9 @@ export function TopBar({
           </span>
           <span>Hull {p1MotherHp}/{p1MotherMaxHp}</span>
           <span aria-hidden="true" className="text-zinc-700">·</span>
-          <span>Shield {p1ShieldPct}%</span>
+          <span className={p1ShieldPct > 100 ? 'text-emerald-300 font-semibold' : p1ShieldPct === 0 ? 'text-zinc-600' : ''}>
+            Shield {p1ShieldPct}%
+          </span>
           <span aria-hidden="true" className="text-zinc-700">·</span>
           <span>Fighters {p1Fighters}</span>
         </div>
@@ -117,7 +122,9 @@ export function TopBar({
           </span>
           <span>Hull {p2MotherHp}/{p2MotherMaxHp}</span>
           <span aria-hidden="true" className="text-zinc-700">·</span>
-          <span>Shield {p2ShieldPct}%</span>
+          <span className={p2ShieldPct > 100 ? 'text-emerald-300 font-semibold' : p2ShieldPct === 0 ? 'text-zinc-600' : ''}>
+            Shield {p2ShieldPct}%
+          </span>
           <span aria-hidden="true" className="text-zinc-700">·</span>
           <span>Fighters {p2Fighters}</span>
         </div>

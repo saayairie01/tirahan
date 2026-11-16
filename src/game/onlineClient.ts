@@ -249,6 +249,21 @@ export function playOnlineSfxCues(cues: OnlineSfxCue[] | undefined) {
       case 'shield_break':
         sound.playShieldHit(true);
         break;
+      case 'shield_boost':
+        sound.playShieldBoost();
+        break;
+      case 'cell_pickup':
+        sound.playCellPickup();
+        break;
+      case 'mine_explosion':
+        sound.playMineExplosion();
+        break;
+      case 'trident_split':
+        sound.playTridentSplit();
+        break;
+      case 'flak_burst':
+        sound.playFlakBurst();
+        break;
       case 'explosion':
         sound.playShipExplosion(false);
         break;

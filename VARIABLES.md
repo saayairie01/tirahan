@@ -13,10 +13,9 @@ Complete reference of all constants, data model fields, UI state variables, audi
 | `LOGICAL_WIDTH` | `number` | `1280` | Logical canvas width in pixels |
 | `LOGICAL_HEIGHT` | `number` | `760` | Logical canvas height in pixels |
 | `PAPER_MARGIN` | `number` | `26` | Inset border margin from canvas edge (px) |
-| `SHIELD_RADIUS` | `number` | `104` | Circular shield ring radius around each Mother Ship (px) |
-| `SHIELD_SEGMENTS` | `number` | `12` | Number of arc segments per player's circular shield |
+| `SHIELD_RADIUS` | `number` | `104` | Circular solid shield ring radius around each Mother Ship (px) |
 | `FIGHTER_ORBIT_RADIUS` | `number` | `148` | Initial spawn radius of the 5 starting Fighter Ships around each Mother Ship (px) |
-| `MAX_MOVE_DISTANCE` | `number` | `155` | Maximum Move-mode drag distance for a Fighter Ship (px) |
+| `MAX_MOVE_DISTANCE` | `number` | `155` | Maximum Move-mode drag distance for a Fighter Ship (`310` with Hyper Move) |
 | `ROTATION_SENSITIVITY` | `number` | `0.006` | Mouse horizontal movement sensitivity (`radians / px`) |
 | `KEY_ROTATION_SPEED` | `number` | `2.1` | Keyboard (`A`/`D`, Left/Right) rotation speed (`radians / s`) |
 | `P1_BASE` | `{ x: number; y: number }` | `{ x: 146, y: 614 }` | Player 1 corner Mother Ship & shield center coordinates (px) |
@@ -43,13 +42,21 @@ Complete reference of all constants, data model fields, UI state variables, audi
 | --- | --- | --- | --- |
 | `FIGHTER_HP` | `number` | `3` | Starting & spawned Fighter Ship HP |
 | `MOTHERSHIP_HP` | `number` | `20` | Starting Mother Ship HP |
-| `SHIELD_SEGMENT_HP` | `number` | `6` | Starting HP for each of the 12 shield arcs |
-| `FIGHTER_PROJECTILE_DAMAGE` | `number` | `3` | Damage dealt per hit by a Fighter Ship projectile |
-| `MOTHERSHIP_PROJECTILE_DAMAGE` | `number` | `10` | Damage dealt per hit by a Mother Ship projectile |
+| `SHIELD_RING_HP` | `number` | `10` | Starting HP for each player's unified solid circular shield ring |
+| `SHIELD_MAX_OVER_HP` | `number` | `20` | Maximum over-shield HP (`200%`) reachable via Energy Power Cells |
+| `FIGHTER_PROJECTILE_DAMAGE` | `number` | `3` | Damage dealt per hit by a Fighter Ship projectile (`6` with Overcharge) |
+| `MOTHERSHIP_PROJECTILE_DAMAGE` | `number` | `10` | Damage dealt per hit by a Mother Ship projectile (`20` with Overcharge) |
 | `KAMIKAZE_DAMAGE` | `number` | `5` | Mutual HP damage dealt to both ships on Move-ram or spawn overlap |
-| `SHIELD_COLLISION_DAMAGE` | `number` | `5` | Damage dealt to an intact shield arc when a moving or spawned ship collides with it |
+| `SHIELD_COLLISION_DAMAGE` | `number` | `5` | Damage dealt to an intact shield ring when a moving or spawned ship collides with it |
 | `ASTEROID_COLLISION_DAMAGE` | `number` | `5` | Damage dealt to an asteroid when a moving or spawned ship collides with it |
-| `ASTEROID_COUNTS` | `Record<AsteroidDensity, number>` | `{ off: 0, low: 3, medium: 5, high: 8 }` | Number of asteroids generated per density setting |
+| `ASTEROID_COUNTS` | `Record<AsteroidDensity, number>` | `{ off: 0, low: 6, medium: 10, high: 16 }` | Number of asteroids generated per density setting |
+| `POWER_CELL_RADIUS` / `MAX_ACTIVE_POWER_CELLS` | `number` | `14` / `5` | Collision radius (`14px`) and open-space cap (`5`) for arena Power Cells |
+| `REPAIR_CELL_VALUE` / `ENERGY_CELL_VALUE` | `number` | `4` / `4` | Mother Ship HP restored by Repair (`+4`) and Shield HP gained by Energy (`+4`, over-shields above `10`) |
+| `MINE_BLAST_RADIUS` / `MINE_BLAST_DAMAGE` | `number` | `90` / `4` | Proximity Mine explosion radius (`90px`) and AoE damage (`4 HP`) |
+| `TRIDENT_SPLIT_RATIO` / `TRIDENT_SPREAD_RAD` | `number` | `0.5` / `0.31` | Splits Trident projectile into 3 warheads at `50%` range (`±0.31 rad`) |
+| `FLAK_SHRAPNEL_COUNT` / `RANGE` / `DAMAGE` | `number` | `8` / `95` / `3` | `8` radial 360° shrapnel shots (`95px` range, `3 HP` each, no Fighter spawn) |
+| `HYPER_MOVE_MULT` | `number` | `2` | Move-mode drag range multiplier when Hyper Move charge is armed (`310px`) |
+| `FIGHTER_SHIELD_HP` / `FIGHTER_SHIELD_OFFSET` | `number` | `5` / `9` | 5 HP Fighter Shield capacity and ring offset (`ship.radius + 9px`) |
 | `ASTEROID_MIN_RADIUS` | `number` | `20` | Minimum asteroid collision radius (px) |
 | `ASTEROID_MAX_RADIUS` | `number` | `46` | Maximum asteroid collision radius (px) |
 | `ASTEROID_GRAVITY_RADIUS_MULT` | `number` | `3.4` | Gravitational well radius multiplier (`gravityRadius = radius * 3.4`) |
@@ -90,8 +97,10 @@ Complete reference of all constants, data model fields, UI state variables, audi
 | Field | Type | Default / Initial | Purpose |
 | --- | --- | --- | --- |
 | `ships` | `Ship[]` | `12` ships (`2` Mother Ships, `10` Fighters) | All active and destroyed ships |
-| `shields` | `ShieldSegment[]` | `24` segments (`12` per corner) | Circular shield arcs around both Mother Ships |
-| `asteroids` | `Asteroid[]` | `generateAsteroids(rules.asteroidDensity)` | Retro Atari destructible gravity asteroids |
+| `shields` | `ShieldRing[]` | `2` rings (`1` per corner, `10 HP`) | Unified solid circular shield ring around each Mother Ship |
+| `asteroids` | `Asteroid[]` | `generateAsteroids(rules.asteroidDensity)` | Destructible gravity asteroids (`6/10/16`), some hiding Power Cells |
+| `powerCells` | `PowerCell[]` | `2` initial + periodic spawns | Open-space and asteroid-revealed Power Cells (`repair`, `energy`, `mine`, `trident`, `flak`, `overcharge`, `piercer`, `hyper_move`, `laser_sight`, `laser_dot`, `fighter_shield`) |
+| `charges` | `Record<PlayerId, PlayerCharges>` | `0` each | Banked tactical Power Cell charges per player (`trident`, `flak`, `overcharge`, `piercer`, `hyper_move`, `laser_sight`, `laser_dot`, `fighter_shield`) |
 | `projectiles` | `Projectile[]` | `[]` | Active in-flight projectiles |
 | `particles` | `VectorParticle[]` | `[]` | Transient vector burst line fragments |
 | `shockwaves` | `ShockwaveRing[]` | `[]` | Expanding vector impact rings |
@@ -125,7 +134,7 @@ Complete reference of all constants, data model fields, UI state variables, audi
 
 | Struct | Key Fields | Purpose |
 | --- | --- | --- |
-| `Ship` | `id, owner, kind, x, y, angle, radius, hp, maxHp, alive, flashTimer` | Mother Ships (`34px`, `20 HP`) and Fighter Ships (`15px`, `3 HP`) |
+| `Ship` | `id, owner, kind, x, y, angle, radius, hp, maxHp, alive, flashTimer, hasLaserSight?, hasLaserDot?, shieldHp?, shieldMaxHp?, shieldFlashTimer?` | Mother Ships (`34px`, `20 HP`) and Fighter Ships (`15px`, `3 HP`) with optional permanent laser attachments and `5 HP` Fighter Shield |
 | `ShieldSegment` | `id, owner, index, centerX, centerY, radius, startAngle, endAngle, hp, maxHp, flashTimer` | `12` circular shield segments (`6 HP` each) per corner |
 | `Projectile` | `id, owner, sourceShipId, hitShipIds, x, y, vx, vy, power, damage, distanceTraveled, maxRange, bounces, maxBounces, trail, active` | Attacker-colored shot with gravity deflection, piercing through Fighters, and range-end Fighter spawning |
 

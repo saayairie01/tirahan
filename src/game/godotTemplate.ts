@@ -20,14 +20,14 @@ class_name TirahanArena
 # - Press M for Move Mode: drag a Fighter to reposition or ram an enemy for a Kamikaze Hit (5 HP mutual dmg + bonus turn).
 # - Press B to toggle looping background music (res://mattoglseby-3.ogg).
 
-@export_enum("Off:0", "Low:3", "Medium:5", "High:8") var asteroid_count: int = 5
+@export_enum("Off:0", "Low:6", "Medium:10", "High:16") var asteroid_count: int = 10
 @export var music_enabled: bool = true
 @export var music_path: String = "res://mattoglseby-3.ogg"
 
 const ARENA_SIZE := Vector2(1280, 760)
 const MARGIN := 26.0
 const SHIELD_RADIUS := 104.0
-const SHIELD_SEGMENTS := 12
+const SHIELD_SEGMENTS := 1
 const FIGHTER_ORBIT := 148.0
 const MAX_MOVE_DISTANCE := 155.0
 const ROTATION_SENSITIVITY := 0.006
@@ -42,7 +42,7 @@ const PROJECTILE_SPEED := 780.0
 
 const FIGHTER_HP := 3
 const MOTHERSHIP_HP := 20
-const SHIELD_HP := 6
+const SHIELD_HP := 10
 const FIGHTER_DAMAGE := 3
 const MOTHERSHIP_DAMAGE := 10
 const KAMIKAZE_DAMAGE := 5

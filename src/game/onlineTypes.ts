@@ -1,4 +1,10 @@
-import type { GameWorld, MatchRules, PlayerId } from './types.ts';
+import type {
+  FireModifierKind,
+  GameWorld,
+  MatchRules,
+  PlayerId,
+  ShipBuffKind,
+} from './types.ts';
 
 export type OnlineTransportMode = 'ws' | 'p2p';
 
@@ -21,6 +27,11 @@ export type OnlineSfxCue =
   | 'bounce'
   | 'shield'
   | 'shield_break'
+  | 'shield_boost'
+  | 'cell_pickup'
+  | 'mine_explosion'
+  | 'trident_split'
+  | 'flak_burst'
   | 'explosion'
   | 'mothership_explosion'
   | 'asteroid_hit'
@@ -40,8 +51,26 @@ export type ClientToServerMessage =
   | { type: 'queue:join'; rules: MatchRules }
   | { type: 'queue:leave' }
   | { type: 'aim:update'; shipId: string; angle: number; isCharging: boolean }
-  | { type: 'action:fire'; shipId: string; angle: number; power: number }
-  | { type: 'action:move'; shipId: string; targetX: number; targetY: number }
+  | {
+      type: 'action:fire';
+      shipId: string;
+      angle: number;
+      power: number;
+      fireMod?: FireModifierKind | null;
+      fireMods?: FireModifierKind[];
+    }
+  | {
+      type: 'action:move';
+      shipId: string;
+      targetX: number;
+      targetY: number;
+      hyperMove?: boolean;
+    }
+  | {
+      type: 'action:equip';
+      shipId: string;
+      buff: ShipBuffKind;
+    }
   | { type: 'match:rematch' }
   | { type: 'room:leave' };
 

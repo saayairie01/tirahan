@@ -5,6 +5,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
+  applyShipBuff,
   createWorld,
   executeMoveShip,
   fireFromShip,
@@ -114,9 +115,10 @@ function hasActiveSimulation(world: GameWorld): boolean {
     world.pendingDestructions.length > 0 ||
     world.victoryDelay > 0 ||
     world.screenShake > 0.1 ||
-    world.ships.some((s) => s.flashTimer > 0) ||
+    world.ships.some((s) => s.flashTimer > 0 || (s.shieldFlashTimer ?? 0) > 0) ||
     world.shields.some((s) => s.flashTimer > 0) ||
-    world.asteroids.some((a) => a.flashTimer > 0)
+    world.asteroids.some((a) => a.flashTimer > 0) ||
+    world.powerCells.some((c) => c.graceTimer > 0)
   );
 }
 
@@ -671,7 +673,37 @@ async function startServer() {
 
         let executed = false;
         const cues = captureSfx(() => {
-          executed = fireFromShip(world, msg.shipId, msg.angle, msg.power);
+          executed = fireFromShip(
+            world,
+            msg.shipId,
+            msg.angle,
+            msg.power,
+            msg.fireMods ?? (msg.fireMod ? [msg.fireMod] : [])
+          );
+        });
+        if (!executed) return;
+
+        room.lastBroadcastAt = Date.now();
+        broadcastRoom(room, {
+          type: 'world:state',
+          world,
+          sfx: cues.length > 0 ? cues : undefined,
+        });
+        ensureRoomTickLoop(room);
+        return;
+      }
+
+      if (msg.type === 'action:equip') {
+        if (world.winner !== null || world.actionLocked || world.currentTurn !== meta.seat) {
+          return;
+        }
+        if (otherSeat && !otherSeat.ws) {
+          return;
+        }
+
+        let executed = false;
+        const cues = captureSfx(() => {
+          executed = applyShipBuff(world, msg.shipId, msg.buff);
         });
         if (!executed) return;
 
@@ -699,7 +731,13 @@ async function startServer() {
 
         let executed = false;
         const cues = captureSfx(() => {
-          executed = executeMoveShip(world, msg.shipId, msg.targetX, msg.targetY);
+          executed = executeMoveShip(
+            world,
+            msg.shipId,
+            msg.targetX,
+            msg.targetY,
+            Boolean(msg.hyperMove)
+          );
         });
         if (!executed) return;
 

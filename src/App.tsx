@@ -13,13 +13,17 @@ const IS_AUTHORING_ENV =
         window.location.hostname === '127.0.0.1' ||
         window.location.hostname.startsWith('ais-dev-'))));
 import {
+  FIGHTER_SHIELD_HP,
   KEY_ROTATION_SPEED,
   LOGICAL_HEIGHT,
   LOGICAL_WIDTH,
   MIN_POWER,
+  POWER_CELL_META,
   ROTATION_SENSITIVITY,
+  applyShipBuff,
   chooseCpuAction,
   computeChargePower,
+  createEmptyCharges,
   createWorld,
   executeMoveShip,
   findShipAtPoint,
@@ -27,6 +31,7 @@ import {
   getMoveDraftPreview,
   getOverheatChance,
   getProjectileRange,
+  normalizeFireModifiers,
   rotateShipByDelta,
   stepWorld,
 } from './game/engine';
@@ -54,15 +59,19 @@ import {
 import { PeerOnlineClient } from './game/peerOnlineClient';
 import { sound } from './game/sound';
 import {
+  APP_VERSION,
   ActionMode,
   ActiveFireState,
   AsteroidDensity,
+  FireModifierKind,
   GameMode,
   GameState,
   GameWorld,
   MatchRules,
   MoveDraft,
+  PlayerCharges,
   PlayerId,
+  ShipBuffKind,
 } from './game/types';
 import { renderWorld } from './game/vectorDraw';
 
@@ -73,10 +82,12 @@ interface HudSnapshot {
   p1MotherMaxHp: number;
   p1Fighters: number;
   p1ShieldPct: number;
+  p1Charges: PlayerCharges;
   p2MotherHp: number;
   p2MotherMaxHp: number;
   p2Fighters: number;
   p2ShieldPct: number;
+  p2Charges: PlayerCharges;
   winner: 1 | 2 | null;
   victoryReady: boolean;
   pendingCollapseCount: number;
@@ -111,10 +122,12 @@ function readHudSnapshot(world: GameWorld): HudSnapshot {
     p1MotherMaxHp: p1Mother ? p1Mother.maxHp : 20,
     p1Fighters,
     p1ShieldPct: p1Max > 0 ? Math.round((p1Hp / p1Max) * 100) : 0,
+    p1Charges: { ...(world.charges?.[1] ?? createEmptyCharges()) },
     p2MotherHp: p2Mother ? Math.max(0, p2Mother.hp) : 0,
     p2MotherMaxHp: p2Mother ? p2Mother.maxHp : 20,
     p2Fighters,
     p2ShieldPct: p2Max > 0 ? Math.round((p2Hp / p2Max) * 100) : 0,
+    p2Charges: { ...(world.charges?.[2] ?? createEmptyCharges()) },
     winner: world.winner,
     victoryReady:
       world.winner !== null && world.pendingDestructions.length === 0 && world.victoryDelay <= 0,
@@ -166,6 +179,9 @@ export default function App() {
   const [rematchRequested, setRematchRequested] = useState(false);
   const [opponentWantsRematch, setOpponentWantsRematch] = useState(false);
   const [turnHint, setTurnHint] = useState<string | null>(null);
+  const [armedFireMods, setArmedFireMods] = useState<FireModifierKind[]>([]);
+  const [armedHyperMove, setArmedHyperMove] = useState(false);
+  const [selectedShipId, setSelectedShipId] = useState<string | null>(null);
 
   const worldRef = useRef<GameWorld>(
     createWorld({ ricochetWalls: false, asteroidDensity: 'medium' })
@@ -201,6 +217,11 @@ export default function App() {
   const reconnectRetryTimerRef = useRef<number | null>(null);
   const p2pGuestCountdownRef = useRef<number | null>(null);
   const turnHintTimerRef = useRef<number | null>(null);
+
+  const armedFireModsRef = useRef<FireModifierKind[]>([]);
+  armedFireModsRef.current = armedFireMods;
+  const armedHyperMoveRef = useRef(false);
+  armedHyperMoveRef.current = armedHyperMove;
 
   const gameStateRef = useRef(gameState);
   gameStateRef.current = gameState;
@@ -242,7 +263,15 @@ export default function App() {
     const ship = worldRef.current.ships.find((s) => s.id === af.shipId && s.alive);
     const powerPct = Math.round(af.power * 100);
     const rangePx = ship ? Math.round(getProjectileRange(ship, af.power)) : 0;
-    const overheatPct = ship ? Math.round(getOverheatChance(af.power, ship.kind) * 100) : 0;
+    const overheatPct = ship
+      ? Math.round(
+          getOverheatChance(
+            af.power,
+            ship.kind,
+            armedFireModsRef.current.includes('overcharge')
+          ) * 100
+        )
+      : 0;
     setActiveShipStatus((prev) =>
       prev.active &&
       prev.charging === af.isCharging &&
@@ -263,6 +292,7 @@ export default function App() {
       chargePointerIdRef.current = null;
       movePointerIdRef.current = null;
       spaceChargingRef.current = false;
+      setSelectedShipId(null);
       syncActiveStatus();
     }
     if (snap.victoryReady && gameStateRef.current === 'PLAYING') {
@@ -308,6 +338,14 @@ export default function App() {
       chargePointerIdRef.current = null;
       movePointerIdRef.current = null;
       spaceChargingRef.current = false;
+      setSelectedShipId(null);
+      if (nextMode === 'move') {
+        armedFireModsRef.current = [];
+        setArmedFireMods([]);
+      } else {
+        armedHyperMoveRef.current = false;
+        setArmedHyperMove(false);
+      }
       setActionMode(nextMode);
       syncActiveStatus();
     },
@@ -323,6 +361,11 @@ export default function App() {
     spaceChargingRef.current = false;
     lastClientXRef.current = null;
     remoteAimRef.current = null;
+    armedFireModsRef.current = [];
+    armedHyperMoveRef.current = false;
+    setArmedFireMods([]);
+    setArmedHyperMove(false);
+    setSelectedShipId(null);
     syncActiveStatus();
   }, [syncActiveStatus]);
 
@@ -463,9 +506,26 @@ export default function App() {
 
         if (msg.type === 'world:state') {
           const prevTurn = worldRef.current.currentTurn;
+          const prevTurnCount = worldRef.current.turnCount;
+          const localAimShipId =
+            !msg.world.actionLocked && msg.world.currentTurn === onlineSeatRef.current
+              ? activeFireRef.current?.shipId
+              : null;
+          const preservedAngle = localAimShipId
+            ? worldRef.current.ships.find((s) => s.id === localAimShipId)?.angle
+            : undefined;
           worldRef.current = msg.world;
-          if (msg.world.currentTurn !== prevTurn) {
+          if (localAimShipId && preservedAngle !== undefined) {
+            const syncedShip = worldRef.current.ships.find((s) => s.id === localAimShipId && s.alive);
+            if (syncedShip) syncedShip.angle = preservedAngle;
+          }
+          if (msg.world.currentTurn !== prevTurn || msg.world.turnCount !== prevTurnCount) {
             setTurnHint(null);
+            armedFireModsRef.current = [];
+            armedHyperMoveRef.current = false;
+            setArmedFireMods([]);
+            setArmedHyperMove(false);
+            setSelectedShipId(null);
           }
           playOnlineSfxCues(msg.sfx);
           syncHud();
@@ -624,6 +684,14 @@ export default function App() {
     [clearCpuTimers, clearOnlineTimers, resetLocalInputState]
   );
 
+  useEffect(() => {
+    armedFireModsRef.current = [];
+    armedHyperMoveRef.current = false;
+    setArmedFireMods([]);
+    setArmedHyperMove(false);
+    setSelectedShipId(null);
+  }, [hud.currentTurn, hud.turnCount]);
+
   // Load runtime online config, restore saved session, or prefill ?room=CODE&mode=p2p|ws invite
   useEffect(() => {
     let cancelled = false;
@@ -721,13 +789,20 @@ export default function App() {
     const ship = world.ships.find((s) => s.id === af.shipId && s.alive && s.owner === world.currentTurn);
     if (!ship) {
       activeFireRef.current = null;
+      setSelectedShipId(null);
       syncActiveStatus();
       return;
     }
     const power = af.power;
+    const validMods = normalizeFireModifiers(armedFireModsRef.current).filter(
+      (m) => (world.charges?.[ship.owner]?.[m] ?? 0) > 0
+    );
     activeFireRef.current = null;
     chargePointerIdRef.current = null;
     spaceChargingRef.current = false;
+    armedFireModsRef.current = [];
+    setArmedFireMods([]);
+    setSelectedShipId(null);
     if (gameModeRef.current === 'online') {
       if (!onlineClientRef.current?.isConnected()) {
         setOnlineError('Connection lost — waiting to reconnect...');
@@ -740,14 +815,122 @@ export default function App() {
         shipId: ship.id,
         angle: ship.angle,
         power,
+        fireMods: validMods,
       });
       syncActiveStatus();
       return;
     }
-    fireFromShip(world, ship.id, ship.angle, power);
+    fireFromShip(world, ship.id, ship.angle, power, validMods);
     syncActiveStatus();
     syncHud();
   }, [isInputAllowed, syncActiveStatus, syncHud]);
+
+  const toggleFireModifier = useCallback(
+    (mod: FireModifierKind) => {
+      if (!isInputAllowed()) return;
+      const world = worldRef.current;
+      const available = world.charges?.[world.currentTurn]?.[mod] ?? 0;
+      if (available <= 0) return;
+
+      armedHyperMoveRef.current = false;
+      setArmedHyperMove(false);
+      if (actionModeRef.current !== 'fire') {
+        setActionMode('fire');
+      }
+
+      const prev = armedFireModsRef.current;
+      let next: FireModifierKind[];
+      if (prev.includes(mod)) {
+        next = prev.filter((m) => m !== mod);
+      } else {
+        const filtered =
+          mod === 'trident'
+            ? prev.filter((m) => m !== 'flak')
+            : mod === 'flak'
+              ? prev.filter((m) => m !== 'trident')
+              : prev;
+        next = [...filtered, mod];
+      }
+
+      armedFireModsRef.current = next;
+      setArmedFireMods(next);
+      syncActiveStatus();
+    },
+    [isInputAllowed, syncActiveStatus]
+  );
+
+  const toggleHyperMove = useCallback(() => {
+    if (!isInputAllowed()) return;
+    const world = worldRef.current;
+    const available = world.charges?.[world.currentTurn]?.hyper_move ?? 0;
+    if (available <= 0) return;
+    const next = !armedHyperMoveRef.current;
+    armedHyperMoveRef.current = next;
+    setArmedHyperMove(next);
+    if (next) {
+      armedFireModsRef.current = [];
+      setArmedFireMods([]);
+      if (actionModeRef.current !== 'move') {
+        handleActionModeChange('move');
+      }
+    }
+  }, [handleActionModeChange, isInputAllowed]);
+
+  const applyShipBuffAction = useCallback(
+    (buff: ShipBuffKind) => {
+      if (!isInputAllowed()) return;
+      const world = worldRef.current;
+      if ((world.charges?.[world.currentTurn]?.[buff] ?? 0) <= 0) return;
+
+      const targetId = activeFireRef.current?.shipId ?? selectedShipId;
+      if (!targetId) {
+        showTurnHint('Click one of your ships first to apply this Power Cell');
+        return;
+      }
+      const ship = world.ships.find(
+        (s) => s.id === targetId && s.alive && s.owner === world.currentTurn
+      );
+      if (!ship) {
+        showTurnHint('Select an active friendly ship first');
+        return;
+      }
+      if (buff === 'laser_sight' && ship.hasLaserSight) {
+        showTurnHint('This ship already has Laser Sight mounted');
+        return;
+      }
+      if (buff === 'laser_dot' && ship.hasLaserDot) {
+        showTurnHint('This ship already has Laser Dot mounted');
+        return;
+      }
+      if (buff === 'fighter_shield') {
+        if (ship.kind !== 'fighter') {
+          showTurnHint('Fighter Shield can only be equipped on a Fighter Ship');
+          return;
+        }
+        if ((ship.shieldHp ?? 0) >= FIGHTER_SHIELD_HP) {
+          showTurnHint('This Fighter Shield is already at full 5/5 HP');
+          return;
+        }
+      }
+
+      if (gameModeRef.current === 'online') {
+        if (!onlineClientRef.current?.isConnected()) {
+          setOnlineError('Connection lost — waiting to reconnect...');
+          return;
+        }
+        onlineClientRef.current.send({
+          type: 'action:equip',
+          shipId: ship.id,
+          buff,
+        });
+        return;
+      }
+
+      applyShipBuff(world, ship.id, buff);
+      syncHud();
+    },
+    [isInputAllowed, selectedShipId, showTurnHint, syncHud]
+  );
 
   // Fit 1280x760 vector canvas cleanly inside viewport container
   useEffect(() => {
@@ -897,7 +1080,9 @@ export default function App() {
             actionModeRef.current,
             now / 1000,
             humanTurn,
-            gameModeRef.current === 'online' ? remoteAimRef.current : null
+            gameModeRef.current === 'online' ? remoteAimRef.current : null,
+            humanTurn ? armedFireModsRef.current : [],
+            humanTurn ? armedHyperMoveRef.current : false
           );
         }
       }
@@ -994,6 +1179,13 @@ export default function App() {
       const ship = currentWorld.ships.find((s) => s.id === plan.shipId && s.alive);
       if (!ship) return;
 
+      if (plan.preBuffs.length > 0) {
+        for (const item of plan.preBuffs) {
+          applyShipBuff(currentWorld, item.shipId, item.buff);
+        }
+        syncHud();
+      }
+
       cpuAimTweenRef.current = {
         shipId: plan.shipId,
         startAngle: ship.angle,
@@ -1005,7 +1197,7 @@ export default function App() {
       cpuFireTimerRef.current = window.setTimeout(() => {
         cpuAimTweenRef.current = null;
         if (worldRef.current.winner !== null || worldRef.current.actionLocked) return;
-        fireFromShip(worldRef.current, plan.shipId, plan.angle, plan.power);
+        fireFromShip(worldRef.current, plan.shipId, plan.angle, plan.power, plan.fireMods);
         syncHud();
       }, 460);
     }, 580);
@@ -1032,6 +1224,7 @@ export default function App() {
         chargePointerIdRef.current = null;
         movePointerIdRef.current = null;
         spaceChargingRef.current = false;
+        setSelectedShipId(null);
         syncActiveStatus();
         return;
       }
@@ -1039,6 +1232,41 @@ export default function App() {
       if ((e.key === 'm' || e.key === 'M') && gameStateRef.current === 'PLAYING') {
         handleActionModeChange(actionModeRef.current === 'fire' ? 'move' : 'fire');
         return;
+      }
+
+      if (gameStateRef.current === 'PLAYING' && !e.repeat) {
+        if (e.key === '1') {
+          toggleFireModifier('trident');
+          return;
+        }
+        if (e.key === '2') {
+          toggleFireModifier('flak');
+          return;
+        }
+        if (e.key === '3') {
+          toggleFireModifier('overcharge');
+          return;
+        }
+        if (e.key === '4') {
+          toggleFireModifier('piercer');
+          return;
+        }
+        if (e.key === '5') {
+          toggleHyperMove();
+          return;
+        }
+        if (e.key === '6') {
+          applyShipBuffAction('laser_sight');
+          return;
+        }
+        if (e.key === '7') {
+          applyShipBuffAction('laser_dot');
+          return;
+        }
+        if (e.key === '8') {
+          applyShipBuffAction('fighter_shield');
+          return;
+        }
       }
 
       if (
@@ -1082,11 +1310,14 @@ export default function App() {
   }, [
     rulesOpen,
     godotOpen,
+    applyShipBuffAction,
     emitAimUpdate,
     fireActiveShip,
     handleActionModeChange,
     isInputAllowed,
     syncActiveStatus,
+    toggleFireModifier,
+    toggleHyperMove,
   ]);
 
   const toLogicalPoint = (clientX: number, clientY: number) => {
@@ -1125,6 +1356,7 @@ export default function App() {
       chargePointerIdRef.current = null;
       movePointerIdRef.current = null;
       spaceChargingRef.current = false;
+      setSelectedShipId(null);
       syncActiveStatus();
       return;
     }
@@ -1148,9 +1380,13 @@ export default function App() {
     // Move mode: drag a friendly fighter ship to reposition
     if (actionModeRef.current === 'move') {
       if (!clickedShip || clickedShip.kind !== 'fighter') return;
+      const useHyper =
+        armedHyperMoveRef.current &&
+        (world.charges?.[clickedShip.owner]?.hyper_move ?? 0) > 0;
+      setSelectedShipId(clickedShip.id);
       movePointerIdRef.current = e.pointerId;
       e.currentTarget.setPointerCapture(e.pointerId);
-      moveDraftRef.current = getMoveDraftPreview(world, clickedShip, pt.x, pt.y);
+      moveDraftRef.current = getMoveDraftPreview(world, clickedShip, pt.x, pt.y, useHyper);
       return;
     }
 
@@ -1163,6 +1399,7 @@ export default function App() {
         chargeTime: 0,
         power: MIN_POWER,
       };
+      setSelectedShipId(clickedShip.id);
       lastClientXRef.current = e.clientX;
       sound.playSelect();
       emitAimUpdate(clickedShip.id, clickedShip.angle, false, true);
@@ -1192,7 +1429,9 @@ export default function App() {
     if (movePointerIdRef.current === e.pointerId && moveDraftRef.current) {
       const ship = world.ships.find((s) => s.id === moveDraftRef.current?.shipId && s.alive);
       if (ship) {
-        moveDraftRef.current = getMoveDraftPreview(world, ship, pt.x, pt.y);
+        const useHyper =
+          armedHyperMoveRef.current && (world.charges?.[ship.owner]?.hyper_move ?? 0) > 0;
+        moveDraftRef.current = getMoveDraftPreview(world, ship, pt.x, pt.y, useHyper);
       }
       return;
     }
@@ -1215,6 +1454,9 @@ export default function App() {
       const draft = moveDraftRef.current;
       moveDraftRef.current = null;
       if (draft && !draft.cancelled && isInputAllowed()) {
+        const useHyper = Boolean(draft.hyperMove);
+        armedHyperMoveRef.current = false;
+        setArmedHyperMove(false);
         if (gameModeRef.current === 'online') {
           if (!onlineClientRef.current?.isConnected()) {
             setOnlineError('Connection lost — waiting to reconnect...');
@@ -1226,10 +1468,11 @@ export default function App() {
             shipId: draft.shipId,
             targetX: draft.targetX,
             targetY: draft.targetY,
+            hyperMove: useHyper,
           });
           setActionMode('fire');
         } else {
-          executeMoveShip(worldRef.current, draft.shipId, draft.targetX, draft.targetY);
+          executeMoveShip(worldRef.current, draft.shipId, draft.targetX, draft.targetY, useHyper);
           setActionMode('fire');
           syncHud();
         }
@@ -1578,8 +1821,9 @@ export default function App() {
               <p className="text-xs font-mono tracking-wide text-zinc-400">
                 Classic Pen-and-Paper Space Battle
               </p>
-              <h1 className="mt-1.5 text-3xl font-bold tracking-tight text-zinc-100 text-balance">
-                Tirahan
+              <h1 className="mt-1.5 flex items-baseline gap-2.5 text-3xl font-bold tracking-tight text-zinc-100 text-balance">
+                <span>Tirahan</span>
+                <span className="text-sm font-mono font-normal text-zinc-400">{APP_VERSION}</span>
               </h1>
               <p className="mt-2 text-sm leading-relaxed text-zinc-300">
                 Click a ship to activate it, sweep the mouse left or right to rotate its nose manually, and hold click or Space to charge and fire.
@@ -1602,7 +1846,7 @@ export default function App() {
 
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm text-zinc-200">
-                    Asteroids (Gravity &amp; Cover)
+                    Asteroids <span className="text-xs font-mono text-zinc-500">(6 / 10 / 16)</span>
                   </span>
                   <div className="flex items-center rounded-md border border-zinc-800 bg-black p-0.5">
                     {(['off', 'low', 'medium', 'high'] as AsteroidDensity[]).map((density) => (
@@ -1968,6 +2212,170 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Slim Tactical Power Cells Bar (outside canvas bounds during active match) */}
+      {gameState === 'PLAYING' && (() => {
+        const displaySeat: PlayerId =
+          gameMode === 'online'
+            ? (onlineSeat ?? hud.currentTurn)
+            : gameMode === 'cpu'
+              ? 1
+              : hud.currentTurn;
+        const charges = displaySeat === 1 ? hud.p1Charges : hud.p2Charges;
+        const canArm =
+          hud.winner === null &&
+          !(gameMode === 'cpu' && hud.currentTurn === 2) &&
+          !(gameMode === 'online' && onlineSeat !== hud.currentTurn) &&
+          !(gameMode === 'online' && opponentDisconnectedSeconds !== null);
+        const fireModsList: { key: FireModifierKind; hotkey: string }[] = [
+          { key: 'trident', hotkey: '1' },
+          { key: 'flak', hotkey: '2' },
+          { key: 'overcharge', hotkey: '3' },
+          { key: 'piercer', hotkey: '4' },
+        ];
+        const selectedShip = selectedShipId
+          ? worldRef.current.ships.find(
+              (s) => s.id === selectedShipId && s.alive && s.owner === displaySeat
+            )
+          : undefined;
+        const buffItems: {
+          key: ShipBuffKind;
+          hotkey: string;
+          eligible: boolean;
+          reason: string;
+        }[] = [
+          {
+            key: 'laser_sight',
+            hotkey: '6',
+            eligible: Boolean(selectedShip && !selectedShip.hasLaserSight),
+            reason: !selectedShip
+              ? 'Select a friendly ship first to mount Laser Sight'
+              : selectedShip.hasLaserSight
+                ? 'Laser Sight already mounted on selected ship'
+                : POWER_CELL_META.laser_sight.description,
+          },
+          {
+            key: 'laser_dot',
+            hotkey: '7',
+            eligible: Boolean(selectedShip && !selectedShip.hasLaserDot),
+            reason: !selectedShip
+              ? 'Select a friendly ship first to mount Laser Dot'
+              : selectedShip.hasLaserDot
+                ? 'Laser Dot already mounted on selected ship'
+                : POWER_CELL_META.laser_dot.description,
+          },
+          {
+            key: 'fighter_shield',
+            hotkey: '8',
+            eligible: Boolean(
+              selectedShip &&
+                selectedShip.kind === 'fighter' &&
+                (selectedShip.shieldHp ?? 0) < FIGHTER_SHIELD_HP
+            ),
+            reason: !selectedShip
+              ? 'Select a Fighter Ship first to deploy Fighter Shield'
+              : selectedShip.kind !== 'fighter'
+                ? 'Fighter Shield only equips on Fighter Ships'
+                : (selectedShip.shieldHp ?? 0) >= FIGHTER_SHIELD_HP
+                  ? 'Selected Fighter already has full 5/5 HP shield'
+                  : POWER_CELL_META.fighter_shield.description,
+          },
+        ];
+
+        return (
+          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-900 bg-zinc-950/70 px-4 sm:px-6 py-1.5 text-[11px] font-mono overflow-x-auto">
+            <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+              <span className={displaySeat === 1 ? 'text-sky-400 font-semibold' : 'text-orange-400 font-semibold'}>
+                P{displaySeat} Cells
+              </span>
+              <span className="hidden lg:inline text-zinc-600">·</span>
+              <span className="hidden lg:inline text-zinc-500">
+                {armedFireMods.length > 1
+                  ? `${armedFireMods.length} stacked`
+                  : 'Stack [1–4] · Move [5] · Ship Buffs [6–8]'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {fireModsList.map(({ key, hotkey }) => {
+                const count = charges[key] ?? 0;
+                const isArmed = canArm && armedFireMods.includes(key);
+                const meta = POWER_CELL_META[key];
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={!canArm || count <= 0}
+                    title={meta.description}
+                    onClick={() => toggleFireModifier(key)}
+                    className={`inline-flex items-center gap-1 rounded border px-2 py-1 transition-colors whitespace-nowrap shrink-0 ${
+                      isArmed
+                        ? 'border-zinc-200 bg-zinc-800 text-white'
+                        : count > 0 && canArm
+                          ? 'border-zinc-800 bg-black text-zinc-200 hover:border-zinc-600 hover:bg-zinc-900 cursor-pointer'
+                          : 'border-zinc-900 bg-black/50 text-zinc-600 cursor-not-allowed'
+                    }`}
+                  >
+                    <span className="text-zinc-500">[{hotkey}]</span>
+                    <span style={{ color: count > 0 ? meta.color : undefined }}>{meta.short}</span>
+                    <span className="text-zinc-400 tabular-nums">×{count}</span>
+                  </button>
+                );
+              })}
+
+              <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-zinc-800 shrink-0" />
+
+              <button
+                type="button"
+                disabled={!canArm || (charges.hyper_move ?? 0) <= 0}
+                title={POWER_CELL_META.hyper_move.description}
+                onClick={toggleHyperMove}
+                className={`inline-flex items-center gap-1 rounded border px-2 py-1 transition-colors whitespace-nowrap shrink-0 ${
+                  canArm && armedHyperMove
+                    ? 'border-teal-400 bg-teal-950/60 text-teal-200'
+                    : (charges.hyper_move ?? 0) > 0 && canArm
+                      ? 'border-zinc-800 bg-black text-zinc-200 hover:border-zinc-600 hover:bg-zinc-900 cursor-pointer'
+                      : 'border-zinc-900 bg-black/50 text-zinc-600 cursor-not-allowed'
+                }`}
+              >
+                <span className="text-zinc-500">[5]</span>
+                <span style={{ color: (charges.hyper_move ?? 0) > 0 ? POWER_CELL_META.hyper_move.color : undefined }}>
+                  {POWER_CELL_META.hyper_move.short}
+                </span>
+                <span className="text-zinc-400 tabular-nums">×{charges.hyper_move ?? 0}</span>
+              </button>
+
+              <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-zinc-800 shrink-0" />
+
+              {buffItems.map(({ key, hotkey, eligible, reason }) => {
+                const count = charges[key] ?? 0;
+                const meta = POWER_CELL_META[key];
+                const canClick = canArm && count > 0;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={!canClick}
+                    title={reason}
+                    onClick={() => applyShipBuffAction(key)}
+                    className={`inline-flex items-center gap-1 rounded border px-2 py-1 transition-colors whitespace-nowrap shrink-0 ${
+                      canClick && eligible
+                        ? 'border-zinc-700 bg-black text-zinc-100 hover:border-zinc-500 hover:bg-zinc-900 cursor-pointer'
+                        : canClick
+                          ? 'border-zinc-800/80 bg-black text-zinc-400 hover:border-zinc-700 cursor-pointer'
+                          : 'border-zinc-900 bg-black/50 text-zinc-600 cursor-not-allowed'
+                    }`}
+                  >
+                    <span className="text-zinc-500">[{hotkey}]</span>
+                    <span style={{ color: count > 0 ? meta.color : undefined }}>{meta.short}</span>
+                    <span className="text-zinc-400 tabular-nums">×{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Slim unboxed footer status bar */}
       <footer className="flex h-9 shrink-0 items-center justify-between gap-4 border-t border-zinc-900 bg-black px-4 sm:px-6 text-xs font-mono tabular-nums text-zinc-400">

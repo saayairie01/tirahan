@@ -1,4 +1,5 @@
 import { X } from 'lucide-react';
+import { APP_VERSION } from '../game/types';
 
 interface RulesModalProps {
   open: boolean;
@@ -15,11 +16,14 @@ export function RulesModal({ open, onClose }: RulesModalProps) {
       aria-modal="true"
       aria-labelledby="rules-modal-title"
     >
-      <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-950 p-6 text-zinc-200 shadow-2xl">
+      <div className="max-h-[88dvh] w-full max-w-xl overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950 p-6 text-zinc-200 shadow-2xl">
         <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
-          <h2 id="rules-modal-title" className="text-lg font-semibold text-zinc-100">
-            How to Play Tirahan (Space Battle)
-          </h2>
+          <div className="flex items-baseline gap-2.5">
+            <h2 id="rules-modal-title" className="text-lg font-semibold text-zinc-100">
+              How to Play Tirahan
+            </h2>
+            <span className="text-xs font-mono text-zinc-500">{APP_VERSION}</span>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -38,40 +42,69 @@ export function RulesModal({ open, onClose }: RulesModalProps) {
 
           <div className="space-y-2.5 border-t border-zinc-900 pt-3">
             <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-400">
-              Fleet Stats &amp; Damage
+              Fleet Stats, Solid Shields &amp; Asteroids
             </h3>
             <ul className="list-disc pl-5 space-y-1.5 text-zinc-300">
               <li>
-                <strong className="text-zinc-100">Mother Ships (20 HP):</strong> Fire heavy <span className="font-mono text-zinc-200">10 HP</span> projectiles up to <span className="font-mono text-zinc-200">784px</span> range and can safely charge to <span className="font-mono text-zinc-200">100%</span> power with zero overheat risk.
+                <strong className="text-zinc-100">Mother Ships (20 HP):</strong> Fire heavy <span className="font-mono text-zinc-200">10 HP</span> projectiles up to <span className="font-mono text-zinc-200">784px</span> range with zero overheat risk.
               </li>
               <li>
-                <strong className="text-zinc-100">Fighter Ships (3 HP):</strong> Fire <span className="font-mono text-zinc-200">3 HP</span> projectiles up to <span className="font-mono text-zinc-200">392px</span> range. Charging above <span className="font-mono text-zinc-200">75%</span> follows an asymptotic overheat curve up to <span className="font-mono text-zinc-200">95%</span> at 100%.
+                <strong className="text-zinc-100">Fighter Ships (3 HP):</strong> Fire <span className="font-mono text-zinc-200">3 HP</span> projectiles up to <span className="font-mono text-zinc-200">392px</span> range. Charging above <span className="font-mono text-zinc-200">75%</span> risks overheating unless Overcharge is armed.
               </li>
               <li>
-                <strong className="text-zinc-100">Piercing Shots:</strong> Projectiles pierce through Fighter Ships (enemy or friendly in path), damaging every fighter crossed on their way to max range. Shields (<span className="font-mono text-zinc-200">6 HP</span> per arc), asteroids, and Mother Ships stop shots.
+                <strong className="text-zinc-100">Unified Solid Shield (10 HP):</strong> One continuous ring protects each Mother Ship (blocks incoming shots and collisions; Energy cells rebuild or over-shield above <span className="font-mono text-zinc-200">100%</span> up to <span className="font-mono text-zinc-200">200%</span>).
               </li>
               <li>
-                <strong className="text-zinc-100">Atari Gravity Asteroids:</strong> Configurable rocks bend nearby shots with size-scaled gravitational fields. Asteroids have HP proportionate to size (<span className="font-mono text-zinc-200">0 HP</span> shatters them) and destroy colliding ships (<span className="font-mono text-zinc-200">5 dmg</span>).
+                <strong className="text-zinc-100">Atari Gravity Asteroids:</strong> Configurable rocks (<span className="font-mono text-zinc-200">Low 6 · Medium 10 · High 16</span>) bend shots with gravity, absorb hits, and can hide Power Cells inside.
               </li>
             </ul>
           </div>
 
           <div className="space-y-2.5 border-t border-zinc-900 pt-3">
             <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-400">
-              Controls, Barriers &amp; Kamikaze Hits
+              Power Cells &amp; Tactical Charges
+            </h3>
+            <p className="text-xs text-zinc-400">
+              Power Cells spawn in open space and emerge from shattered asteroids. Collect them by shooting through them or colliding in Move/spawn flight.
+            </p>
+            <ul className="list-disc pl-5 space-y-1.5 text-zinc-300">
+              <li>
+                <strong className="text-emerald-300">Repair / Energy (Instant):</strong> Repair restores <span className="font-mono text-zinc-200">+4 Mother Ship HP</span>; Energy restores or over-shields your ring by <span className="font-mono text-zinc-200">+4 HP</span> (does not repair Fighter Shields).
+              </li>
+              <li>
+                <strong className="text-rose-400">Proximity Mines (Hazard):</strong> Detonate on projectile hit or ship contact for <span className="font-mono text-zinc-200">4 HP</span> blast damage across a <span className="font-mono text-zinc-200">90px</span> radius.
+              </li>
+              <li>
+                <strong className="text-violet-300">[1–4] Stackable Fire Mods:</strong> Arm any combination together before firing (except Trident &amp; Flak, which are mutually exclusive):
+                <span className="block mt-1 text-xs text-zinc-400">
+                  <strong className="text-violet-300">[1] Trident</strong> (3-way split &amp; spawn) · <strong className="text-orange-300">[2] Flak</strong> (8× radial 3 HP burst, no spawn) · <strong className="text-yellow-300">[3] Overcharge</strong> (2× damage, 0% overheat) · <strong className="text-sky-200">[4] Piercer</strong> (bypasses Mother Ship &amp; Fighter shields).
+                </span>
+              </li>
+              <li>
+                <strong className="text-teal-300">[5] Hyper Move (Standalone):</strong> Doubles Fighter Move-mode drag range for one maneuver (does not stack with Fire Mods).
+              </li>
+              <li>
+                <strong className="text-rose-300">[6–8] Free Ship Buffs:</strong> Select a friendly ship and apply without ending your turn — still fire or move afterward:
+                <span className="block mt-1 text-xs text-zinc-400">
+                  <strong className="text-cyan-300">[6] Laser Sight</strong> (permanent max-range aim line until destroyed) · <strong className="text-red-400">[7] Laser Dot</strong> (permanent invisible beam projecting a glowing red contact dot) · <strong className="text-indigo-300">[8] Fighter Shield</strong> (5 HP ring around selected Fighter; replace with a new Fighter Shield cell to repair).
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="space-y-2.5 border-t border-zinc-900 pt-3">
+            <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-400">
+              Controls, Kamikaze &amp; Online
             </h3>
             <ul className="list-disc pl-5 space-y-1.5 text-zinc-300">
               <li>
-                <strong className="text-zinc-100">Coin Flip &amp; Aim:</strong> Who shoots first is randomized each match. Click a friendly ship to activate it, sweep the mouse left or right (or <span className="font-mono text-zinc-200">A/D</span>, Arrows) to rotate, then hold click or <span className="font-mono text-zinc-200">Space</span> to charge and release to fire exact range.
+                <strong className="text-zinc-100">Aim &amp; Fire:</strong> Click a friendly ship to activate, sweep mouse L/R (or <span className="font-mono text-zinc-200">A/D</span>, Arrows) to aim, hold click or <span className="font-mono text-zinc-200">Space</span> to charge and release. Toggle Fire/Move mods with <span className="font-mono text-zinc-200">1–5</span>; apply free Ship Buffs with <span className="font-mono text-zinc-200">6–8</span>.
               </li>
               <li>
-                <strong className="text-zinc-100">Shield, Asteroid &amp; Border Destruction:</strong> Moving or spawning against the paper border, an intact shield arc, or an asteroid destroys the ship immediately. Destroying a Mother Ship triggers a chain collapse across its fleet.
+                <strong className="text-zinc-100">Kamikaze Hit (Bonus Turn):</strong> Ramming an enemy ship in Move mode (<span className="font-mono text-zinc-200">M</span>) or spawning on one deals <span className="font-mono text-zinc-200">5 HP</span> mutual damage and grants a bonus turn.
               </li>
               <li>
-                <strong className="text-zinc-100">Kamikaze Hit (Bonus Turn):</strong> Ramming a Fighter into an enemy ship in Move mode (<span className="font-mono text-zinc-200">M</span>) or spawning a Fighter on an enemy ship inflicts <span className="font-mono text-zinc-200">5 HP</span> mutual damage and grants a bonus turn to fire again.
-              </li>
-              <li>
-                <strong className="text-zinc-100">2-Player Online:</strong> Create a 6-character private room or join the Quick Match queue (via Direct P2P WebRTC or Match Server). Live ship rotation syncs as you aim, and disconnected players have <span className="font-mono text-zinc-200">60s</span> to reconnect before forfeit.
+                <strong className="text-zinc-100">2-Player Online:</strong> Play via Match Server or Direct P2P WebRTC with live turn sync and <span className="font-mono text-zinc-200">60s</span> reconnect grace.
               </li>
             </ul>
           </div>
