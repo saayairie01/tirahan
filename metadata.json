@@ -1,0 +1,6 @@
+{
+  "name": "Tirahan",
+  "description": "Traditional Filipino pen-and-paper space battle game rendered with crisp vector graphics on a pure black canvas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
